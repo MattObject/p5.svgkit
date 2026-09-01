@@ -14,10 +14,10 @@ loaded — plus a PNG snapshot of the canvas.
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/p5@2/lib/p5.min.js"></script>
-<script src="svgkit.js"></script>
+<script src="p5.svgkit.js"></script>
 ```
 
-Put `svgkit.js` next to your sketch. Serve the folder over HTTP — any
+Put `p5.svgkit.js` next to your sketch. Serve the folder over HTTP — any
 static server works, e.g. `python3 -m http.server` or a live-reload
 server. (Files loaded with `fetch()`, so opening `index.html` directly
 via `file://` will not work.)
