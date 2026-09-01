@@ -237,7 +237,8 @@
 
   Recorder.prototype.load = function (path, opts) {
     var self = this;
-    var whiteAbove = opts && typeof opts.ignoreWhite === 'number' ? opts.ignoreWhite : null;
+    var whiteAbove = opts && typeof opts.whiteTransparent === 'number' ? opts.whiteTransparent
+      : (opts && opts.whiteTransparent === true ? 250 : null);
     return fetch(path)
       .then(function (r) {
         if (!r.ok) throw new Error('svgkit.load: ' + r.status + ' ' + path);
@@ -249,13 +250,8 @@
         text = text
           .replace(/width="[^"]*"/, 'width="' + m[1] + '"')
           .replace(/height="[^"]*"/, 'height="' + m[2] + '"');
-        if (opts && opts.ignoreWhite) {
-          var t = opts.ignoreWhite;
-          // near-white opacity and fill styles vanish; the marks stay
-          text = text.replace(/(fill(?:-opacity)?:\s*)rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g,
-            function (all, pre, r, g, b) {
-              return (+r >= t && +g >= t && +b >= t) ? (pre === 'fill:' ? 'fill:none' : pre + '0') : all;
-            });
+        if (whiteAbove !== null) {
+          text = makeWhiteTransparent(text, whiteAbove);
         }
         var url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
         return self.p.loadImage(url).then(function (img) {
@@ -264,6 +260,83 @@
         });
       });
   };
+
+  var MASK_N = 0;
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var SHAPE_SEL = 'path,rect,circle,ellipse,polygon,polyline';
+
+  function fillOf(el) {
+    var style = el.getAttribute('style') || '';
+    var styleFill = style.match(/(?:^|;)\s*fill\s*:\s*([^;]*)/);
+    var v = (styleFill ? styleFill[1] : (el.getAttribute('fill') || '')).trim();
+    var ch = null;
+    var rm = v.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+    if (rm) ch = [+rm[1], +rm[2], +rm[3]];
+    else if (/^#([0-9a-f]{6})$/i.test(v)) {
+      var h = v.slice(1);
+      ch = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    } else if (/^#([0-9a-f]{3})$/i.test(v)) {
+      var h3 = v.slice(1);
+      ch = [parseInt(h3[0] + h3[0], 16), parseInt(h3[1] + h3[1], 16), parseInt(h3[2] + h3[2], 16)];
+    } else if (v === 'white') ch = [255, 255, 255];
+    return ch;
+  }
+
+  // Traced scans draw paper as white shapes on top of complete dark
+  // geometry; deleting the whites reveals that geometry as solid black.
+  // Instead, cut the whites out as real holes: marks live under a
+  // luminance mask in which the white shapes are painted black (hidden),
+  // so the paper shows through — even when symbols overlap.
+  function makeWhiteTransparent(text, threshold) {
+    var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    var svg = doc.querySelector('svg');
+    if (!svg) return text;
+
+    var shapes = svg.querySelectorAll(SHAPE_SEL);
+    var whiteCount = 0;
+    for (var i = 0; i < shapes.length; i++) {
+      var ch = fillOf(shapes[i]);
+      if (ch && ch[0] >= threshold && ch[1] >= threshold && ch[2] >= threshold) {
+        shapes[i].setAttribute('data-sk-white', '');
+        whiteCount++;
+      }
+    }
+    if (whiteCount === 0) return text;
+
+    var maskGroup = doc.createElementNS(SVG_NS, 'g');
+    var kids = [].slice.call(svg.children);
+    for (var k = 0; k < kids.length; k++) maskGroup.appendChild(kids[k].cloneNode(true));
+    var mShapes = maskGroup.querySelectorAll(SHAPE_SEL);
+    for (var j = 0; j < mShapes.length; j++) {
+      var isWhite = mShapes[j].hasAttribute('data-sk-white');
+      mShapes[j].removeAttribute('data-sk-white');
+      mShapes[j].setAttribute('style', isWhite ? 'fill:black;stroke:none' : 'fill:none;stroke:none');
+    }
+
+    var m = text.match(/viewBox="([\deE.+-]+)[\s]([\deE.+-]+)[\s]([\deE.+-]+)[\s]([\deE.+-]+)"/);
+    var mask = doc.createElementNS(SVG_NS, 'mask');
+    mask.setAttribute('id', 'sk-holes-' + (++MASK_N));
+    mask.setAttribute('maskUnits', 'userSpaceOnUse');
+    mask.setAttribute('x', m ? m[1] : '0');
+    mask.setAttribute('y', m ? m[2] : '0');
+    mask.setAttribute('width', m ? m[3] : '0');
+    mask.setAttribute('height', m ? m[4] : '0');
+    var base = doc.createElementNS(SVG_NS, 'rect');
+    base.setAttribute('x', mask.getAttribute('x'));
+    base.setAttribute('y', mask.getAttribute('y'));
+    base.setAttribute('width', mask.getAttribute('width'));
+    base.setAttribute('height', mask.getAttribute('height'));
+    base.setAttribute('fill', 'white');
+    mask.appendChild(base);
+    mask.appendChild(maskGroup);
+
+    var content = doc.createElementNS(SVG_NS, 'g');
+    content.setAttribute('mask', 'url(#' + mask.getAttribute('id') + ')');
+    while (svg.firstChild) content.appendChild(svg.firstChild);
+    svg.appendChild(mask);
+    svg.appendChild(content);
+    return new XMLSerializer().serializeToString(doc);
+  }
 
   Recorder.prototype.registerSvgImage = function (img, svgText) {
     if (!img || !svgText) return;

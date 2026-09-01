@@ -62,7 +62,7 @@ Press **e** → the browser downloads `composition.svg` (vector) and
 
 | Option | What it does |
 |---|---------|
-| `{ ignoreWhite: N }` | Rewrites fills at or above RGB N (0–255, all channels) to transparent. Made for scanned artwork: the paper background vanishes, the marks stay. Typical value: `240`. |
+| `{ whiteTransparent: N }` | Treats fills at or above RGB N (0–255, all channels) — typically the scanned paper — as **holes cut through the artwork**, so the canvas (or whatever is composited underneath) shows through them. Use `true` for the default threshold of 250. Made for traced scans: without it, deleting the paper shapes would unveil the complete dark geometry underneath as solid black. Typical value: `240`. |
 
 Non-SVG images (`loadImage`, `gif`, jpg...) work too — they are exported
 as embedded PNG `<image>` elements.
