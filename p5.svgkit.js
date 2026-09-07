@@ -112,14 +112,21 @@
     },
     image: function (img, x, y, w, h) {
       if (!img) return;
-      var a = this._t(x, y);
       var dw = w || img.width, dh = h || img.height;
       var canvas = img.canvas || null;
       var src = canvas ? this._svgSources[canvas] : null;
       if (src) {
-        this.parts.push('<g transform="translate(' + a.x + ' ' + a.y + ') scale(' + fmt(dw / src.viewBox[2]) + ' ' + fmt(dh / src.viewBox[3]) + ')">' + src.markup + '</g>');
+        // Bake the FULL current transform matrix (rotate/skew included) plus
+        // the local translate and viewBox→destination scale. The nested svg
+        // carries width/height equal to its viewBox (see registerSvgImage),
+        // so viewBox units map 1:1 onto its viewport and this chain exactly
+        // reproduces canvas image(img, x, y, w, h).
+        var m = this.stack[this.stack.length - 1];
+        var t = 'matrix(' + [m.a, m.b, m.c, m.d, m.e, m.f].map(fmt).join(' ') + ')';
+        this.parts.push('<g transform="' + t + ' translate(' + fmt(x) + ' ' + fmt(y) + ') scale(' + fmt(dw / src.viewBox[2]) + ' ' + fmt(dh / src.viewBox[3]) + ')">' + src.markup + '</g>');
         return;
       }
+      var a = this._t(x, y);
       var dataUrl = canvas ? canvas.toDataURL('image/png') : null;
       if (dataUrl) this.parts.push('<image x="' + a.x + '" y="' + a.y + '" width="' + dw + '" height="' + dh + '" href="' + dataUrl + '"/>');
     },
@@ -344,8 +351,14 @@
     var svgEl = doc.querySelector('svg');
     if (!svgEl) return;
     var vb = (svgEl.getAttribute('viewBox') || '0 0 100 100').split(/\s+/).map(Number);
-    var markup = svgEl.outerHTML;
-    markup = markup.replace(/\s(width|height)="[^"]*"/g, '');
+    // Strip width/height from the ROOT svg tag ONLY. A blanket strip also
+    // gutted the whiteTransparent mask (region + white base rect), which
+    // made every masked shape render blank in the exported SVG.
+    var root = svgEl.outerHTML.match(/<svg[^>]*>/)[0].replace(/\s(width|height)="[^"]*"/g, '');
+    // The nested viewport must equal the viewBox so the image() transform
+    // maps viewBox units 1:1 to the drawn destination rect.
+    root = root.replace(/<svg/, '<svg width="' + vb[2] + '" height="' + vb[3] + '"');
+    var markup = root + svgEl.innerHTML + '</svg>';
     if (img.canvas) this._svgSources[img.canvas] = { viewBox: vb, markup: markup };
   };
 
