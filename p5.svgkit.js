@@ -114,7 +114,7 @@
       if (!img) return;
       var dw = w || img.width, dh = h || img.height;
       var canvas = img.canvas || null;
-      var src = canvas ? this._svgSources[canvas] : null;
+      var src = canvas ? this._svgSources.get(canvas) : null;
       if (src) {
         // Bake the FULL current transform matrix (rotate/skew included) plus
         // the local translate and viewBox→destination scale. The nested svg
@@ -232,7 +232,10 @@
     this.base = null;
     this.fontWeight = null;
     this.fontStyle = null;
-    this._svgSources = {};
+    this._svgSources = new Map(); // keyed by the img's canvas OBJECT — a plain
+                                  // object stringifies every canvas to the same
+                                  // "[object HTMLCanvasElement]" key, so all
+                                  // layers embedded the last-loaded symbol
     this._warned = {};
   };
 
@@ -359,7 +362,7 @@
     // maps viewBox units 1:1 to the drawn destination rect.
     root = root.replace(/<svg/, '<svg width="' + vb[2] + '" height="' + vb[3] + '"');
     var markup = root + svgEl.innerHTML + '</svg>';
-    if (img.canvas) this._svgSources[img.canvas] = { viewBox: vb, markup: markup };
+    if (img.canvas) this._svgSources.set(img.canvas, { viewBox: vb, markup: markup });
   };
 
   Recorder.prototype._t = function (x, y) {
